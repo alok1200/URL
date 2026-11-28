@@ -14,6 +14,11 @@ import { logMessage } from "@/lib/config";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Respond cleanly to browser/download-manager HEAD probes without re-running yt-dlp
+export async function HEAD() {
+  return new Response(null, { status: 200 });
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const rawUrl = searchParams.get("url") ?? "";

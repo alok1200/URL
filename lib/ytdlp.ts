@@ -236,14 +236,34 @@ function extractQualityOptions(formats: unknown): {
 }
 
 /**
+ * Returns true if the URL explicitly points to a standalone playlist page
+ * (rather than a single video that happens to carry a &list= parameter).
+ */
+function isStandalonePlaylistUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    const hasVideoId = parsed.searchParams.has("v");
+    if (hasVideoId) return false;
+    return (
+      parsed.pathname.includes("/playlist") ||
+      parsed.pathname.includes("/sets/")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Fetches metadata and available video qualities for a validated URL.
  * Retries once with alternate safe yt-dlp options on transient extraction errors.
  */
 export async function getMediaInfo(url: string): Promise<MediaInfo> {
   const cfg = getConfig();
+  const standalonePlaylist = isStandalonePlaylistUrl(url);
+
   const baseArgs = [
     "--dump-single-json",
-    "--flat-playlist",
+    ...(standalonePlaylist ? ["--flat-playlist"] : ["--no-playlist"]),
     "--no-warnings",
     "--no-exec",
     "--skip-download",
@@ -375,11 +395,22 @@ export async function downloadMedia(params: {
       audioBitrate ? `${audioBitrate}K` : "0",
     );
   } else {
+    // Prefer H.264 (avc1) + AAC (mp4a) for universal playback across macOS QuickTime,
+    // iOS, Windows, and browsers, with graceful fallbacks to other MP4/merged streams.
     const videoFormat =
       height && Number.isFinite(height) && height > 0
-        ? `bestvideo[height<=${height}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${height}]+bestaudio/best[height<=${height}]/best`
-        : "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best";
-    formatArgs.push("-f", videoFormat, "--merge-output-format", "mp4");
+        ? `bestvideo[height<=${height}][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=${height}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${height}]+bestaudio/best[height<=${height}]/best`
+        : "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best";
+    formatArgs.push(
+      "-f",
+      videoFormat,
+      "--merge-output-format",
+      "mp4",
+      "--remux-video",
+      "mp4",
+      "--postprocessor-args",
+      "Merger+ffmpeg:-movflags +faststart",
+    );
   }
 
   const baseArgs = [

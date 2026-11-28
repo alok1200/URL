@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getConfig, logMessage } from "./config";
@@ -25,7 +26,8 @@ export async function ensureTempBaseDir(): Promise<string> {
 export async function createJobTempDir(jobId: string): Promise<string> {
   const baseDir = await ensureTempBaseDir();
   const safeId = jobId.replace(/[^a-zA-Z0-9_-]/g, "");
-  const dir = path.join(baseDir, `job-${safeId || Date.now()}`);
+  const suffix = crypto.randomBytes(4).toString("hex");
+  const dir = path.join(baseDir, `job-${safeId || Date.now()}-${suffix}`);
   await fs.mkdir(dir, { recursive: true });
   return dir;
 }
