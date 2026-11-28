@@ -5,6 +5,7 @@ import { Check, Film, Sparkles, Volume2 } from "lucide-react";
 
 export interface QualityOptionItem {
   height: number;
+  displayHeight?: number;
   approxSizeBytes?: number | null;
 }
 
@@ -13,6 +14,7 @@ export type AudioBitrateOption = "320" | "192" | "128" | "96";
 interface QualitySelectProps {
   heights: number[];
   qualityOptions?: QualityOptionItem[];
+  maxFilesizeMb?: number;
   value: string;
   onChange: (value: string) => void;
   audioBitrate: AudioBitrateOption;
@@ -105,18 +107,20 @@ const AUDIO_STAGES: Array<{
 export function QualitySelect({
   heights,
   qualityOptions,
+  maxFilesizeMb = 500,
   value,
   onChange,
   audioBitrate,
   onAudioBitrateChange,
   disabled = false,
 }: QualitySelectProps) {
-  const sizeByHeight = new Map<number, number | null>();
+  const optionByHeight = new Map<number, QualityOptionItem>();
   if (qualityOptions) {
     for (const opt of qualityOptions) {
-      sizeByHeight.set(opt.height, opt.approxSizeBytes ?? null);
+      optionByHeight.set(opt.height, opt);
     }
   }
+  const maxBytes = maxFilesizeMb * 1024 * 1024;
 
   return (
     <div className="space-y-5">
@@ -175,8 +179,12 @@ export function QualitySelect({
           {heights.map((h) => {
             const key = String(h);
             const selected = value === key;
-            const meta = getVideoStageMeta(h);
-            const sizeLabel = formatApproxSize(sizeByHeight.get(h));
+            const opt = optionByHeight.get(h);
+            const shownHeight = opt?.displayHeight ?? h;
+            const meta = getVideoStageMeta(shownHeight);
+            const approxBytes = opt?.approxSizeBytes ?? null;
+            const sizeLabel = formatApproxSize(approxBytes);
+            const overLimit = approxBytes !== null && approxBytes > maxBytes;
 
             return (
               <button
@@ -184,20 +192,29 @@ export function QualitySelect({
                 type="button"
                 role="radio"
                 aria-checked={selected}
-                disabled={disabled}
+                disabled={disabled || overLimit}
+                title={
+                  overLimit
+                    ? `Exceeds ${maxFilesizeMb} MB server limit`
+                    : `${shownHeight}p ${meta.tier}`
+                }
                 onClick={() => onChange(key)}
-                className={`group relative flex flex-col items-start rounded-xl border px-3 py-2.5 text-left transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 disabled:cursor-not-allowed disabled:opacity-50 ${
+                className={`group relative flex flex-col items-start rounded-xl border px-3 py-2.5 text-left transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 disabled:cursor-not-allowed disabled:opacity-45 ${
                   selected
                     ? "border-indigo-500 bg-gradient-to-br from-indigo-500/15 to-violet-500/10 text-zinc-900 shadow-sm shadow-indigo-500/10 dark:border-indigo-400 dark:text-white"
                     : "border-zinc-200/90 bg-zinc-50/70 text-zinc-700 hover:border-indigo-300 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-300 dark:hover:border-white/20 dark:hover:bg-white/[0.06]"
                 }`}
               >
                 <div className="flex w-full items-center justify-between gap-1">
-                  <span className="text-xs font-bold">{h}p</span>
+                  <span className="text-xs font-bold">{shownHeight}p</span>
                   <span
-                    className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none ${meta.pillClass}`}
+                    className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none ${
+                      overLimit
+                        ? "bg-red-500/15 text-red-600 dark:text-red-400"
+                        : meta.pillClass
+                    }`}
                   >
-                    {meta.badge}
+                    {overLimit ? `>${maxFilesizeMb}MB` : meta.badge}
                   </span>
                 </div>
                 <span className="mt-1 truncate text-[11px] text-zinc-500 dark:text-zinc-400">

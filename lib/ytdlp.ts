@@ -6,6 +6,7 @@ import { getJobManager } from "./job-manager";
 
 export interface QualityOption {
   height: number;
+  displayHeight: number;
   approxSizeBytes: number | null;
 }
 
@@ -21,6 +22,7 @@ export interface MediaInfo {
   playlistCount?: number;
   heights: number[];
   qualityOptions: QualityOption[];
+  maxFilesizeMb: number;
 }
 
 export interface DownloadResult {
@@ -203,34 +205,50 @@ function extractQualityOptions(formats: unknown): {
   qualityOptions: QualityOption[];
 } {
   if (!Array.isArray(formats)) return { heights: [], qualityOptions: [] };
-  const byHeight = new Map<number, number | null>();
+  const byHeight = new Map<
+    number,
+    { displayHeight: number; approxSizeBytes: number | null }
+  >();
 
   for (const fmt of formats) {
     if (!fmt || typeof fmt !== "object") continue;
     const record = fmt as Record<string, unknown>;
     const vcodec = typeof record.vcodec === "string" ? record.vcodec : "";
     const height = typeof record.height === "number" ? record.height : 0;
+    const width = typeof record.width === "number" ? record.width : 0;
 
     // Only include actual video formats (exclude audio-only and storyboard thumbnails)
     if (vcodec && vcodec !== "none" && height >= 144 && height <= 4320) {
+      const displayHeight = width > 0 ? Math.min(width, height) : height;
       const rawSize =
         typeof record.filesize === "number"
           ? record.filesize
           : typeof record.filesize_approx === "number"
             ? record.filesize_approx
             : null;
-      const prev = byHeight.get(height) ?? null;
-      if (!byHeight.has(height) || (rawSize !== null && (prev === null || rawSize > prev))) {
-        byHeight.set(height, rawSize);
+      const prev = byHeight.get(height);
+      if (
+        !prev ||
+        (rawSize !== null &&
+          (prev.approxSizeBytes === null || rawSize < prev.approxSizeBytes))
+      ) {
+        byHeight.set(height, {
+          displayHeight,
+          approxSizeBytes: rawSize,
+        });
       }
     }
   }
 
   const heights = Array.from(byHeight.keys()).sort((a, b) => b - a);
-  const qualityOptions = heights.map((height) => ({
-    height,
-    approxSizeBytes: byHeight.get(height) ?? null,
-  }));
+  const qualityOptions = heights.map((height) => {
+    const entry = byHeight.get(height)!;
+    return {
+      height,
+      displayHeight: entry.displayHeight,
+      approxSizeBytes: entry.approxSizeBytes,
+    };
+  });
 
   return { heights, qualityOptions };
 }
@@ -354,6 +372,7 @@ export async function getMediaInfo(url: string): Promise<MediaInfo> {
     playlistCount: isPlaylist && Array.isArray(parsed.entries) ? parsed.entries.length : undefined,
     heights,
     qualityOptions,
+    maxFilesizeMb: cfg.maxFilesizeMb,
   };
 }
 
@@ -501,6 +520,11 @@ export async function downloadMedia(params: {
   if (result.code !== 0 && !sawDownloadProgress && isRetryableError(result.stderr)) {
     logMessage("info", "Retrying yt-dlp download with alternate options");
     result = await attempt(["--force-ipv4", "--no-cache-dir"]);
+  }
+
+  const combinedOutput = `${result.stdout}\n${result.stderr}`.toLowerCase();
+  if (combinedOutput.includes("file is larger than max-filesize")) {
+    throw new Error("File is larger than max-filesize");
   }
 
   if (result.code !== 0) {

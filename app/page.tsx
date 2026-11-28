@@ -32,23 +32,6 @@ const HISTORY_KEY = "linkdrop_download_history_v1";
 const THEME_KEY = "linkdrop_theme_v1";
 const MAX_HISTORY = 8;
 
-function extractFilenameFromHeader(header: string | null, fallback: string): string {
-  if (!header) return fallback;
-  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
-  if (utf8Match?.[1]) {
-    try {
-      return decodeURIComponent(utf8Match[1]);
-    } catch {
-      // fall through
-    }
-  }
-  const asciiMatch = header.match(/filename="([^"]+)"/i);
-  if (asciiMatch?.[1]) {
-    return asciiMatch[1];
-  }
-  return fallback;
-}
-
 export default function HomePage() {
   const [url, setUrl] = useState("");
   const [checkedUrl, setCheckedUrl] = useState("");
@@ -214,30 +197,28 @@ export default function HomePage() {
     };
 
     try {
-      const params = new URLSearchParams({
-        url: checkedUrl,
-        type,
-        id: jobId,
-        title: info.title,
+      const response = await fetch("/api/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: checkedUrl,
+          type,
+          id: jobId,
+          title: info.title,
+          height: type === "video" && selectedQuality !== "best" ? selectedQuality : undefined,
+          audioBitrate: type === "audio" ? selectedAudioBitrate : undefined,
+        }),
       });
-      if (type === "video" && selectedQuality !== "best") {
-        params.set("height", selectedQuality);
-      }
-      if (type === "audio") {
-        params.set("audioBitrate", selectedAudioBitrate);
-      }
 
-      const response = await fetch(`/api/download?${params.toString()}`);
+      const data = (await response.json()) as {
+        downloadUrl?: string;
+        filename?: string;
+        size?: number;
+        error?: string;
+      };
 
-      if (!response.ok) {
-        let errorMessage = "Download failed. Please try again.";
-        try {
-          const errJson = (await response.json()) as { error?: string };
-          if (errJson.error) errorMessage = errJson.error;
-        } catch {
-          // Response wasn't JSON
-        }
-        showToast("error", errorMessage);
+      if (!response.ok || !data.downloadUrl) {
+        showToast("error", data.error || "Download failed. Please try again.");
         return;
       }
 
@@ -248,21 +229,15 @@ export default function HomePage() {
         eta: null,
       });
 
-      const blob = await response.blob();
-      const fallbackName = `${info.title || "download"}.${type === "audio" ? "mp3" : "mp4"}`;
-      const filename = extractFilenameFromHeader(
-        response.headers.get("Content-Disposition"),
-        fallbackName,
-      );
-
-      const objectUrl = URL.createObjectURL(blob);
+      // Trigger native browser download (no JS Blob RAM buffering, works for large files)
       const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = filename;
+      anchor.href = data.downloadUrl;
+      if (data.filename) {
+        anchor.download = data.filename;
+      }
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
 
       pushHistory({
         url: checkedUrl,
@@ -272,7 +247,7 @@ export default function HomePage() {
         timestamp: Date.now(),
       });
 
-      showToast("success", `Saved: ${filename}`);
+      showToast("success", `Downloading: ${data.filename || info.title}`);
     } catch {
       showToast(
         "error",

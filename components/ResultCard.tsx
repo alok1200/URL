@@ -26,6 +26,7 @@ export interface MediaInfoResponse {
   playlistCount?: number;
   heights: number[];
   qualityOptions?: QualityOptionItem[];
+  maxFilesizeMb?: number;
 }
 
 interface ResultCardProps {
@@ -155,6 +156,7 @@ export function ResultCard({
         <QualitySelect
           heights={info.heights}
           qualityOptions={info.qualityOptions}
+          maxFilesizeMb={info.maxFilesizeMb}
           value={selectedQuality}
           onChange={onQualityChange}
           audioBitrate={selectedAudioBitrate}
