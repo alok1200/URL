@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import {
   Clock,
   Download,
@@ -93,7 +93,16 @@ export function ResultCard({
   activeDownloadType,
   progress,
 }: ResultCardProps) {
+  const [selectedMode, setSelectedMode] = useState<"video" | "audio">("video");
   const durationStr = formatDuration(info.duration);
+
+  const selectedOption = info.qualityOptions?.find(
+    (opt) => String(opt.height) === selectedQuality,
+  );
+  const selectedVideoLabel =
+    selectedQuality === "best"
+      ? "Best MP4"
+      : `${selectedOption?.displayHeight ?? selectedQuality}p MP4`;
 
   return (
     <section
@@ -151,9 +160,48 @@ export function ResultCard({
         </div>
       </div>
 
-      {/* Quality stages & download actions */}
-      <div className="mt-6 space-y-6">
+      {/* Mode selector (Video OR Audio — one active at a time) */}
+      <div className="mt-6 space-y-5">
+        <div
+          role="tablist"
+          aria-label="Choose format type"
+          className="grid grid-cols-2 gap-1.5 rounded-2xl border border-zinc-200/80 bg-zinc-100/80 p-1.5 dark:border-white/10 dark:bg-white/[0.04]"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={selectedMode === "video"}
+            disabled={isDownloading}
+            onClick={() => setSelectedMode("video")}
+            className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 disabled:cursor-not-allowed disabled:opacity-50 ${
+              selectedMode === "video"
+                ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/25"
+                : "text-zinc-600 hover:bg-white/70 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-zinc-100"
+            }`}
+          >
+            <Film className="h-4 w-4" aria-hidden="true" />
+            <span>Video (MP4)</span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={selectedMode === "audio"}
+            disabled={isDownloading}
+            onClick={() => setSelectedMode("audio")}
+            className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:cursor-not-allowed disabled:opacity-50 ${
+              selectedMode === "audio"
+                ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-500/25"
+                : "text-zinc-600 hover:bg-white/70 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-zinc-100"
+            }`}
+          >
+            <Music className="h-4 w-4" aria-hidden="true" />
+            <span>Audio (MP3)</span>
+          </button>
+        </div>
+
         <QualitySelect
+          mode={selectedMode}
           heights={info.heights}
           qualityOptions={info.qualityOptions}
           maxFilesizeMb={info.maxFilesizeMb}
@@ -164,29 +212,27 @@ export function ResultCard({
           disabled={isDownloading}
         />
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {selectedMode === "video" ? (
           <button
             type="button"
             disabled={isDownloading}
             onClick={() => onDownload("video")}
-            className="inline-flex items-center justify-center gap-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-600 bg-[length:200%_auto] px-5 py-3.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition-all duration-200 hover:bg-right hover:shadow-indigo-500/40 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-zinc-900"
+            className="inline-flex w-full items-center justify-center gap-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-600 bg-[length:200%_auto] px-5 py-3.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition-all duration-200 hover:bg-right hover:shadow-indigo-500/40 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-zinc-900"
           >
             <Download className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>
-              Download Video ({selectedQuality === "best" ? "Best MP4" : `${selectedQuality}p MP4`})
-            </span>
+            <span>Download Video ({selectedVideoLabel})</span>
           </button>
-
+        ) : (
           <button
             type="button"
             disabled={isDownloading}
             onClick={() => onDownload("audio")}
-            className="inline-flex items-center justify-center gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-3.5 text-sm font-semibold text-emerald-700 transition-all duration-200 hover:bg-emerald-500/20 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-400/25 dark:bg-emerald-500/15 dark:text-emerald-300 dark:hover:bg-emerald-500/25 dark:focus:ring-offset-zinc-900"
+            className="inline-flex w-full items-center justify-center gap-2.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 bg-[length:200%_auto] px-5 py-3.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/25 transition-all duration-200 hover:bg-right hover:shadow-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-zinc-900"
           >
             <Music className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span>Download Audio ({selectedAudioBitrate}k MP3)</span>
           </button>
-        </div>
+        )}
       </div>
 
       {isDownloading && progress && activeDownloadType && (
