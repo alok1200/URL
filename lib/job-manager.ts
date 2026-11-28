@@ -1,0 +1,116 @@
+export type JobStage =
+  | "fetching"
+  | "downloading"
+  | "merging"
+  | "converting"
+  | "ready"
+  | "error";
+
+export interface ProgressEvent {
+  id: string;
+  stage: JobStage;
+  percent: number;
+  speed: string | null;
+  eta: string | null;
+  error?: string;
+}
+
+type Subscriber = (event: ProgressEvent) => void;
+
+interface JobRecord {
+  state: ProgressEvent;
+  updatedAt: number;
+  subscribers: Set<Subscriber>;
+}
+
+const JOB_TTL_MS = 2 * 60 * 1000;
+
+class JobManager {
+  private readonly jobs = new Map<string, JobRecord>();
+
+  private ensureJob(id: string): JobRecord {
+    let record = this.jobs.get(id);
+    if (!record) {
+      record = {
+        state: {
+          id,
+          stage: "fetching",
+          percent: 0,
+          speed: null,
+          eta: null,
+        },
+        updatedAt: Date.now(),
+        subscribers: new Set(),
+      };
+      this.jobs.set(id, record);
+    }
+    return record;
+  }
+
+  update(
+    id: string,
+    patch: Partial<Omit<ProgressEvent, "id">>,
+  ): ProgressEvent {
+    const record = this.ensureJob(id);
+    record.state = {
+      ...record.state,
+      ...patch,
+      id,
+    };
+    record.updatedAt = Date.now();
+
+    for (const sub of record.subscribers) {
+      try {
+        sub(record.state);
+      } catch {
+        // Ignore broken subscriber streams
+      }
+    }
+
+    if (record.state.stage === "ready" || record.state.stage === "error") {
+      this.scheduleCleanup(id);
+    }
+
+    return record.state;
+  }
+
+  getState(id: string): ProgressEvent | undefined {
+    return this.jobs.get(id)?.state;
+  }
+
+  subscribe(id: string, callback: Subscriber): () => void {
+    const record = this.ensureJob(id);
+    record.subscribers.add(callback);
+
+    // Immediately emit current known state
+    callback(record.state);
+
+    return () => {
+      record.subscribers.delete(callback);
+    };
+  }
+
+  private scheduleCleanup(id: string): void {
+    const timer = setTimeout(() => {
+      const record = this.jobs.get(id);
+      if (record && Date.now() - record.updatedAt >= JOB_TTL_MS - 1000) {
+        this.jobs.delete(id);
+      }
+    }, JOB_TTL_MS);
+
+    if (typeof timer.unref === "function") {
+      timer.unref();
+    }
+  }
+}
+
+const globalForJobs = globalThis as typeof globalThis & {
+  __umdJobManager?: JobManager;
+};
+
+export function getJobManager(): JobManager {
+  if (!globalForJobs.__umdJobManager) {
+    globalForJobs.__umdJobManager = new JobManager();
+  }
+  return globalForJobs.__umdJobManager;
+}
